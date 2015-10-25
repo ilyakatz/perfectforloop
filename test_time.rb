@@ -1,29 +1,62 @@
-dir = "/Users/katzmopolitan/buftimer"
-ls = Dir.entries(dir)
-ls = ls.drop(2) # remove . and ..
+require 'csv'
+dir = "/Users/katzmopolitan/Desktop/buftimer"
+OUTPUT_CSV="/Users/katzmopolitan/Desktop/buftimer_output.csv"
 ExtensionsRegex = "(rb|haml)"
 
-sessions = Hash.new
-ls.each do |filename|
-  # there can be multiple files for a given VIM session
-  # if VIM was opened for may days in a row
-  filename =~ /(.*\.\d+)\.\d{4}\.\d{2}.\d{2}/
-  session_name = $1
-  full_file_name = "#{dir}/#{filename}"
-
-  # session hash will contain the last filename
-  # for a given vim session
-  sessions[session_name] = full_file_name
-
-  process_files(sessions.values)
+def list_files(dir)
+  ls = Dir.entries(dir).sort_by do |x|
+    full_file_name = "#{dir}/#{x}"
+    File.mtime(full_file_name)
+  end
+  ls = cleanup_files(ls)
 end
 
-def process_files(filenames)
+def process_directory(dir)
 
-  filenames.each do |filename|
-    process_file(filename)
-  end;1
+  ls = list_files(dir)
 
+  sessions = Hash.new
+  ls.each do |filename|
+    # there can be multiple files for a given VIM session
+    # if VIM was opened for may days in a row
+    filename =~ /(.*\.\d+)\.(\d{4}\.\d{2}.\d{2})/
+    session_name = $1
+    date = $2
+    full_file_name = "#{dir}/#{filename}"
+
+    tests,code,filename = process_file(full_file_name)
+    if tests && code
+      sessions[session_name] = {test: tests, code: code, date: date }
+    end
+
+    if session_name == "buftimer_report.25409"
+      binding.pry
+    end
+  end
+  sessions
+end
+
+def cleanup_files(ls)
+  ls.delete(".")
+  ls.delete("..")
+  ls.delete(".DS_Store")
+  ls
+end
+
+def output(sessions)
+  CSV.open( OUTPUT_CSV, 'w' ) do |writer|
+    writer << ["file","date", "test", "code"]
+    sessions.each do |k,v|
+      writer << [k, "'#{ v[:date] }'" , v[:test] , v[:code]]
+    end
+
+    writer << [
+      "Total",
+      "",
+      sessions.values.collect{|v|v[:test]}.compact.inject{|sum,v| sum + v},
+      sessions.values.collect{|v|v[:code]}.compact.inject{|sum,v| sum + v}
+    ]
+  end
 end
 
 def process_file(filename)
@@ -47,6 +80,7 @@ def process_file(filename)
 
   if tests > 0 and code > 0
     puts "#{tests} - #{code} - #{ filename }"
+    return tests,code,filename
   end
 end
 
@@ -81,3 +115,7 @@ end
 def test?(filename)
   !!(filename =~ /_spec/)
 end
+
+sessions = process_directory(dir)
+output(sessions)
+
